@@ -1,0 +1,3 @@
+[server]
+runOnSave = true        # auto-rerun when any watched file is saved
+fileWatcherType = "auto"  # (default) use watchdog if available
