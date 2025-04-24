@@ -4,6 +4,15 @@ import pandas as pd
 import streamlit as st
 
 
+## Todo:
+# - Add a button to generate a PDF report of the analysis
+# fix deductions and cash flow calculations
+# add summary of property stats with ability to add images, address and notes
+
+
+
+
+
 
 st.set_page_config(page_title="Property Investment Report", page_icon="💰", layout="wide")
 st.title("🏠 Property Investment Analysis")
@@ -41,19 +50,19 @@ with st.sidebar.form("inputs_form"):
     loan_expense_header = tab2.empty()
     offset_account = tab2.number_input("Offset Account Fee", 0, step=50, value=0)
     lmi = tab2.number_input("Lenders Mortgage Insurance (LMI)", 0, step=1000, value=0)
-    valuation_fee = tab2.number_input("Valuation Fee", 0, step=50, value=0)
-    search_fee = tab2.number_input("Search Fee", 0, step=50, value=0)
+    government_fees = tab2.number_input("Government Fees", 0, step=50, value=0)
     stamp_duty = tab2.number_input("Stamp Duty", 0, step=250, value=0)
     convayencor_fee = tab2.number_input("Conveyancing Fee", 0, step=50, value=1500)
 
     tab2.subheader("Online Calculators")
     tab2.link_button('Stamp Duty & LMI Calculator', 'https://www.westpac.com.au/personal-banking/home-loans/calculator/stamp-duty-calculator/')
     
-    total_loan_expenses = offset_account + lmi + valuation_fee + search_fee + stamp_duty + convayencor_fee
+    total_loan_expenses = offset_account + lmi + government_fees 
+    #\
 
     loan_expense_header.write(f"**Total Loan Expenses:**   ${total_loan_expenses:,.0f}")
 
-    loan_amount = property_value - cash_investment + total_loan_expenses
+    loan_amount = property_value - cash_investment + stamp_duty + convayencor_fee + total_loan_expenses
     loan_amount_header.write(f"**Borrowed Amount:**   ${loan_amount:,.0f}")
 
 
@@ -129,6 +138,10 @@ with st.sidebar.form("inputs_form"):
     property_growth = tab6.number_input("Capital Growth (%)", 0.0, step=0.1, value=5.0)
     vacancy_rate = tab6.number_input("Vacancy Rate (%)", 0.0, step=0.1, value=1.0)
 
+    #footer
+
+    st.markdown("""---""")
+    st.markdown("Version 0.1.1")
 
 
 if st.button("📄 Generate PDF"):
@@ -151,18 +164,20 @@ col2.metric("Equity in Property (10 years)", f"${property_value * (1 + property_
 # 10 year projection df table
 years = np.arange(1, 11)
 rental_income_projection = np.zeros(10)
-rental_income_projection[0] = (rental_income / 7) * 365
+# rental_income_projection[0] = (rental_income / 7) * 365
+rental_income_projection[0] = rental_income
+
 for i in range(1, 10):
-    rental_income_projection[i] = rental_income_projection[i-1] * (1 + rental_income_growth / 100) * (1 - vacancy_rate / 100)
+    rental_income_projection[i] = rental_income_projection[i-1] * (1 + rental_income_growth / 100) #* (1 - vacancy_rate / 100)
 
 projection_df = pd.DataFrame({
     "Year": np.arange(1, 11),
     "Property Value": property_value * (1 + property_growth / 100) ** np.arange(1, 11),
-    "Weekly Rent": rental_income_projection // 365 * 7,
-    "Annual Rental Income": rental_income_projection,
+    "Weekly Rent": rental_income_projection,
+    "Annual Rental Income": rental_income_projection * 52 * (1 - vacancy_rate / 100),
     "Depreciation": updated_depreciation_schedule["Depreciation"],
     "Expenses": [
-        (agent_commision * rental_income_projection[i] / 100) + council_rates + insurance + body_corp + land_tax
+        (agent_commision * ((rental_income_projection[i]*52) * (1 - vacancy_rate / 100)) / 100) + council_rates + insurance + body_corp + land_tax
         for i in range(10)
     ]
 })
