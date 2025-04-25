@@ -5,7 +5,7 @@ import bisect
 # import numpy_financial as npf
 
 
-version = "0.1.0"
+version = "0.1.1"
 
 ## Todo:
 # - Add a button to generate a PDF report of the analysis
