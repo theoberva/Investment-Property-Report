@@ -1,7 +1,8 @@
 import numpy as np
-# import numpy_financial as npf
 import pandas as pd
 import streamlit as st
+import bisect
+# import numpy_financial as npf
 
 
 ## Todo:
@@ -10,12 +11,8 @@ import streamlit as st
 # add summary of property stats with ability to add images, address and notes
 
 
-
-
-
-
-st.set_page_config(page_title="Property Investment Report", page_icon="💰", layout="wide")
-st.title("🏠 Property Investment Analysis")
+st.set_page_config(page_title="Property Investment Report", page_icon="🏠", layout="wide")
+st.title("Property Investment Analysis")
 
 with st.sidebar.form("inputs_form"):
     submitted = st.form_submit_button("Update")
@@ -58,7 +55,7 @@ with st.sidebar.form("inputs_form"):
     tab2.link_button('Stamp Duty & LMI Calculator', 'https://www.westpac.com.au/personal-banking/home-loans/calculator/stamp-duty-calculator/')
     
     total_loan_expenses = offset_account + lmi + government_fees 
-    #\
+    
 
     loan_expense_header.write(f"**Total Loan Expenses:**   ${total_loan_expenses:,.0f}")
 
@@ -157,8 +154,8 @@ col1.metric("Rental Income", f"${rental_income:,.0f}")
 
 col2.subheader("Projection")
 col2.metric("Gross Rental Yield", f"{round((rental_income*52) / property_value * 100,2)}%")
-col2.metric("Property Value (10 years)", f"${property_value * (1 + property_growth / 100) ** 10:,.0f}")
-col2.metric("Equity in Property (10 years)", f"${property_value * (1 + property_growth / 100) ** 10 - loan_amount:,.0f}")
+col2.metric("Property Value (10 years)", f"${property_value * (1 + property_growth / 100) ** 9:,.0f}")
+col2.metric("Equity in Property (10 years)", f"${property_value * (1 + property_growth / 100) ** 9 - loan_amount:,.0f}")
 
 
 # 10 year projection df table
@@ -170,17 +167,20 @@ rental_income_projection[0] = rental_income
 for i in range(1, 10):
     rental_income_projection[i] = rental_income_projection[i-1] * (1 + rental_income_growth / 100) #* (1 - vacancy_rate / 100)
 
+annual_rental_income = rental_income_projection * 52 * (1 - vacancy_rate / 100)
+annual_agent_commision = (agent_commision/100) *  annual_rental_income
+annual_expenses = annual_agent_commision + council_rates + insurance + body_corp + land_tax
+
 projection_df = pd.DataFrame({
     "Year": np.arange(1, 11),
-    "Property Value": property_value * (1 + property_growth / 100) ** np.arange(1, 11),
+    "Property Value": property_value * (1 + property_growth / 100) ** np.arange(0, 10),
     "Weekly Rent": rental_income_projection,
-    "Annual Rental Income": rental_income_projection * 52 * (1 - vacancy_rate / 100),
+    "Annual Rental Income": annual_rental_income,
     "Depreciation": updated_depreciation_schedule["Depreciation"],
-    "Expenses": [
-        (agent_commision * ((rental_income_projection[i]*52) * (1 - vacancy_rate / 100)) / 100) + council_rates + insurance + body_corp + land_tax
-        for i in range(10)
-    ]
+    "Expenses": annual_expenses
 })
+
+# ((rental_income_projection[i]*52) * (1 - vacancy_rate / 100))
 
 projection_df["Property Value"] = projection_df["Property Value"]
 projection_df["Annual Rental Income"] = projection_df["Annual Rental Income"]
@@ -206,11 +206,16 @@ st.dataframe(projection_df, use_container_width=True, hide_index=True,
 
 st.subheader("Deductions & Cash Flow")
 
+loan_cost_split = np.zeros(10)
+for i in range(5):
+    loan_cost_split[i] = total_loan_expenses / 5
+
+
 cash_flow_df = pd.DataFrame({
     "Year": np.arange(1, 11),
     "Equity": projection_df["Property Value"] - loan_amount,
     "Pre Tax Cash Flow": projection_df["Annual Rental Income"] - projection_df["Expenses"] - projection_df["Interest"],
-    "Total Deductions": total_loan_expenses + projection_df["Depreciation"] + projection_df["Expenses"] + projection_df["Interest"],
+    "Total Deductions": projection_df["Depreciation"] + projection_df["Expenses"] + projection_df["Interest"] + loan_cost_split,
     "Tax Credit": 0,  # Placeholder for tax credit calculation
     "After Tax Cash Flow": 0,  # Placeholder for after tax cash flow calculation,
     "Income per Week": 0  # Placeholder for income per week calculation
@@ -251,7 +256,7 @@ hecs_rates = {
     159_664: 0.1,
 }
 
-import bisect
+
 
 THRESHOLDS = sorted(hecs_rates) 
 RATES       = [hecs_rates[t] for t in THRESHOLDS]
@@ -280,22 +285,35 @@ def calculate_lito(income, thresholds=LITO_THRESHOLDS, bases=LITO_BASES, tapers=
 tax_credit = 0
 
 
-
 df_temp = pd.DataFrame(partners_income_table_updated)
 n_partners = df_temp["Partner"].nunique()
+
 for i in range(10):
+    
+    tax_credit = 0
     for partner in df_temp['Partner']:
         partners_df = df_temp[df_temp['Partner'] == partner].copy()
-        income = partners_df["Income"].values[0] + (rental_income_projection[i]/n_partners )- (cash_flow_df["Total Deductions"][i]/ n_partners)
+
+        income = partners_df["Income"].values[0]
+        new_income = partners_df["Income"].values[0] + (annual_rental_income[i] / n_partners) - (cash_flow_df["Total Deductions"][i] / n_partners)
 
         hecs = 0
         if partners_df["HECS"].values[0] == True:
-            hecs = calculate_hecs(income)
-        tax = calculate_tax(income) + hecs - calculate_lito(income) + (income * 0.02)
-        tax_credit += tax / 52
-        cash_flow_df["Tax Credit"][i] += tax_credit
-        cash_flow_df["After Tax Cash Flow"][i] += cash_flow_df["Pre Tax Cash Flow"][i] - tax_credit
-        cash_flow_df["Income per Week"][i] += cash_flow_df["After Tax Cash Flow"][i] / 52
+            new_hecs = calculate_hecs(new_income)
+            current_hecs = calculate_hecs(income)
+
+        current_medicare = income * 0.02
+        new_medicare = new_income * 0.02
+
+        current_tax = calculate_tax(income) + current_hecs - calculate_lito(income) + current_medicare
+        new_tax = calculate_tax(new_income) + new_hecs - calculate_lito(new_income) + new_medicare
+
+        tax_difference = current_tax - new_tax
+        tax_credit += tax_difference
+
+    cash_flow_df["Tax Credit"][i] += tax_credit
+    cash_flow_df["After Tax Cash Flow"][i] += (cash_flow_df["Pre Tax Cash Flow"][i] + tax_credit)
+    cash_flow_df["Income per Week"][i] += cash_flow_df["After Tax Cash Flow"][i] / 52
 
 
 
