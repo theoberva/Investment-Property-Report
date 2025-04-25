@@ -5,6 +5,8 @@ import bisect
 # import numpy_financial as npf
 
 
+version = "0.1.0"
+
 ## Todo:
 # - Add a button to generate a PDF report of the analysis
 # fix deductions and cash flow calculations
@@ -138,7 +140,7 @@ with st.sidebar.form("inputs_form"):
     #footer
 
     st.markdown("""---""")
-    st.markdown("Version 0.1.1")
+    st.markdown(f"Version {version}")
 
 
 if st.button("📄 Generate PDF"):
