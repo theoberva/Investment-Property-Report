@@ -6,8 +6,7 @@ from streamlit_searchbox import st_searchbox
 import requests
 
 
-
-version = "0.1.1"
+version = "0.2.1"
 
 ## Todo:
 # - Add a button to generate a PDF report of the analysis
