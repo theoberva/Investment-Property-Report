@@ -18,16 +18,17 @@ st.set_page_config(page_title="Property Investment Report", page_icon="🏠", la
 st.title("Property Investment Report")
 st.markdown("###")
 
-
 GEO_KEY = st.secrets["GEOAPIFY_KEY"]
 
+
+
 def geoapify_suggest(q: str):
-    if len(q) < 3:
+    if len(q) < 5:
         return []
     params = {
         "text": q,
         "limit": 5,
-        "filter": "countrycode:au",   # restrict to Australia
+        "filter": "countrycode:au",   
         "format": "json",
         "apiKey": GEO_KEY,
     }
@@ -42,6 +43,7 @@ def geoapify_suggest(q: str):
         for f in r.json().get("results", [])
     ]
 
+address = st_searchbox(geoapify_suggest, placeholder="Enter address")
 
 
 with st.sidebar.form("inputs_form"):
@@ -51,11 +53,7 @@ with st.sidebar.form("inputs_form"):
 
     ## Property Inputs
     with tab1:
-        address = st_searchbox(geoapify_suggest, placeholder="Search address", label_visibility="collapsed"
-                               , min_characters=3, max_suggestions=5, key="address_searchbox",
-                      label="Address", search_button_label="Search", clear_button_label="Clear")
-        
-        property_image = st.file_uploader("Upload Property Image", type=["jpg", "jpeg", "png"])
+        property_image = st.file_uploader("Upload Property Image", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
     property_value = tab1.number_input("Property Value", 0, step=1000, value=635000)
     rental_income = tab1.number_input("Weekly Rent", 0, step=25, value=600)
@@ -182,11 +180,22 @@ with st.sidebar.form("inputs_form"):
 if st.button("📄 Generate PDF"):
     pass
 
+st.markdown(f"""## {address}""")
+# TODO: add property stats
 
-# show image at fixed size
 
+
+# show grid of multiple images at fixed size responsive to number of images uploaded
 if property_image is not None:
-    st.image(property_image, caption="Property Image", width=500)
+
+    cols = st.columns(3)
+    for i, img in enumerate(property_image):
+        with cols[i % 3]:
+            st.image(img, width=300, caption=f"Image {i+1}")
+
+
+
+
 
 # summary
 coll, col1, col2, colr = st.columns(4)

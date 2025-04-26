@@ -1,5 +1,1 @@
-streamlit==1.33.0          # or whatever version you use locally
-streamlit-searchbox        # <— THIS is the missing package
-requests                   # called by geoapify_suggest()
-pandas                    # called by geoapify_suggest()
-numpy                     # called by geoapify_suggest()
+streamlit-searchbox
