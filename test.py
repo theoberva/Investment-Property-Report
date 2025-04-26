@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import bisect
-# import numpy_financial as npf
+from streamlit_searchbox import st_searchbox
+import requests
+
 
 
 version = "0.1.1"
@@ -14,13 +16,48 @@ version = "0.1.1"
 
 
 st.set_page_config(page_title="Property Investment Report", page_icon="🏠", layout="wide")
-st.title("Property Investment Analysis")
+st.title("Property Investment Report")
+st.markdown("###")
+
+
+GEO_KEY = st.secrets["GEOAPIFY_KEY"]
+
+def geoapify_suggest(q: str):
+    if len(q) < 3:
+        return []
+    params = {
+        "text": q,
+        "limit": 5,
+        "filter": "countrycode:au",   # restrict to Australia
+        "format": "json",
+        "apiKey": GEO_KEY,
+    }
+    r = requests.get(
+        "https://api.geoapify.com/v1/geocode/autocomplete",
+        params=params,
+        timeout=4,
+    )
+    r.raise_for_status()
+    return [
+        (f["formatted"], f["formatted"])
+        for f in r.json().get("results", [])
+    ]
+
+
 
 with st.sidebar.form("inputs_form"):
+    
     submitted = st.form_submit_button("Update")
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Property", "Loan", "Expenses", "Income", "Depreciation", "Growth"])
 
     ## Property Inputs
+    with tab1:
+        address = st_searchbox(geoapify_suggest, placeholder="Search address", label_visibility="collapsed"
+                               , min_characters=3, max_suggestions=5, key="address_searchbox",
+                      label="Address", search_button_label="Search", clear_button_label="Clear")
+        
+        property_image = st.file_uploader("Upload Property Image", type=["jpg", "jpeg", "png"])
+
     property_value = tab1.number_input("Property Value", 0, step=1000, value=635000)
     rental_income = tab1.number_input("Weekly Rent", 0, step=25, value=600)
 
@@ -146,6 +183,12 @@ with st.sidebar.form("inputs_form"):
 if st.button("📄 Generate PDF"):
     pass
 
+
+# show image at fixed size
+
+if property_image is not None:
+    st.image(property_image, caption="Property Image", width=500)
+
 # summary
 coll, col1, col2, colr = st.columns(4)
 col1.subheader("Assumptions")
@@ -196,7 +239,7 @@ st.subheader("10 Year Projection")
 
 st.dataframe(projection_df, use_container_width=True, hide_index=True,
              column_config={
-                "Year": st.column_config.NumberColumn(format="%.0f"),
+                "Year": st.column_config.NumberColumn(format="%.0f", pinned=True),
                 "Property Value": st.column_config.NumberColumn(format="$ %.0f"),
                 "Weekly Rent": st.column_config.NumberColumn(format="$ %.0f"),
                 "Annual Rental Income": st.column_config.NumberColumn(format="$ %.0f"),
@@ -322,7 +365,7 @@ for i in range(10):
 
 st.dataframe(cash_flow_df, use_container_width=True, hide_index=True,
              column_config={
-                "Year": st.column_config.NumberColumn(format="%.0f"),
+                "Year": st.column_config.NumberColumn(format="%.0f", pinned=True),
                 "Equity": st.column_config.NumberColumn(format="$ %.0f"),
                 "Pre Tax Cash Flow": st.column_config.NumberColumn(format="$ %.0f"),
                 "Total Deductions": st.column_config.NumberColumn(format="$ %.0f"),
