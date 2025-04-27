@@ -4,6 +4,14 @@ import streamlit as st
 import bisect
 from streamlit_searchbox import st_searchbox
 import requests
+from fpdf import FPDF
+from io import BytesIO
+import os
+from datetime import datetime
+import zoneinfo      
+from fpdf import FPDF
+import base64
+import tempfile, os, contextlib
 
 
 version = "1.0.1"
@@ -175,8 +183,7 @@ with st.sidebar.form("inputs_form"):
     st.markdown(f"Version {version}")
 
 
-from fpdf import FPDF
-import base64
+
 
 def create_download_link(val, filename):
     b64 = base64.b64encode(val)  # val looks like b'...'
@@ -407,11 +414,7 @@ st.markdown("---")
 
 
 # --- PDF helpers -------------------------------------------------------------
-from fpdf import FPDF
-from io import BytesIO
-import os
-from datetime import datetime
-import zoneinfo      
+
 
 MEL_TZ = zoneinfo.ZoneInfo("Australia/Melbourne")
 
@@ -498,7 +501,6 @@ def upload_to_stream(uploaded):
     img_type = "PNG" if ext == ".png" else "JPEG"   # default to JPEG
     return stream, img_type
 
-import tempfile, os, contextlib
 
 @contextlib.contextmanager
 def uploaded_to_tempfile(uploaded):
