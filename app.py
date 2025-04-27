@@ -13,7 +13,7 @@ import base64
 import tempfile, os, contextlib
 
 
-version = "1.0.1"
+version = "1.0.2"
 
 ## Todo:
 # - Add a button to generate a PDF report of the analysis
