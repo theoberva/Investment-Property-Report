@@ -219,7 +219,8 @@ if property_image is not None:
 
 
 notes = st.text_area("Additional Notes", placeholder="Add any additional notes here...", height=(34*4))
-
+if notes == "":
+    notes = "No additional notes provided."
 # summary
 
 st.markdown("---")
@@ -588,7 +589,7 @@ def generate_pdf(address,
                 pdf.set_x(pdf.l_margin + w + 10)
 
     # Return bytes
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S")
 
 
 
@@ -602,6 +603,7 @@ if address is not None:
     address_safe = address.replace(" ","").replace(",","_")
 else:
     address_safe = "No_Address_Provided"
+    
 download_holder.download_button(label=":material/download: PDF Report",
                                 data=build_report(
                                                     address=address,
