@@ -6,7 +6,7 @@ from streamlit_searchbox import st_searchbox
 import requests
 
 
-version = "0.2.1"
+version = "1.0.1"
 
 ## Todo:
 # - Add a button to generate a PDF report of the analysis
@@ -19,8 +19,6 @@ st.title("Property Investment Report")
 st.markdown("###")
 
 GEO_KEY = st.secrets["GEOAPIFY_KEY"]
-
-
 
 def geoapify_suggest(q: str):
     if len(q) < 5:
@@ -177,35 +175,56 @@ with st.sidebar.form("inputs_form"):
     st.markdown(f"Version {version}")
 
 
-if st.button("📄 Generate PDF"):
-    pass
+from fpdf import FPDF
+import base64
 
-st.markdown(f"""## {address}""")
+def create_download_link(val, filename):
+    b64 = base64.b64encode(val)  # val looks like b'...'
+    return f'<a href="data:application/octet-stream;base64,{b64.decode()}" download="{filename}.pdf">Download file</a>'
+
+col1, col2, _, _, _, _, _, _ = st.columns(8)
+# download_pdf = col1.button("📄 Generate PDF")
+download_holder = col1.empty()
+
+
+if address is not None:
+    st.markdown(f"""## {address}""")
+else:
+    st.markdown(f"""## No Address Provided""")
+
 # TODO: add property stats
+col1, col2, _, _, _ = st.columns(5)
+col1.metric("Property Type", property_type)
+col1.metric("Property Age", property_age)
+col1.metric("Property Size", f"{property_size} sqm")
+col2.metric("Bedrooms", property_bedrooms)
+col2.metric("Bathrooms", property_bathrooms)
+col2.metric("Garages", property_garages)
 
 
 
 # show grid of multiple images at fixed size responsive to number of images uploaded
 if property_image is not None:
-
     cols = st.columns(3)
     for i, img in enumerate(property_image):
         with cols[i % 3]:
             st.image(img, width=300, caption=f"Image {i+1}")
 
 
-
-
+notes = st.text_area("Additional Notes", placeholder="Add any additional notes here...", height=(34*4))
 
 # summary
+
+st.markdown("---")
+st.subheader("Summary")
 coll, col1, col2, colr = st.columns(4)
-col1.subheader("Assumptions")
+
 col1.metric("Property Value", f"${property_value:,.0f}")
 col1.metric('Loan Expenses', f"${total_loan_expenses:,.0f}")
 col1.metric("Loan Amount", f"${loan_amount:,.0f}")
 col1.metric("Rental Income", f"${rental_income:,.0f}")
 
-col2.subheader("Projection")
+
 col2.metric("Gross Rental Yield", f"{round((rental_income*52) / property_value * 100,2)}%")
 col2.metric("Property Value (10 years)", f"${property_value * (1 + property_growth / 100) ** 9:,.0f}")
 col2.metric("Equity in Property (10 years)", f"${property_value * (1 + property_growth / 100) ** 9 - loan_amount:,.0f}")
@@ -383,4 +402,230 @@ st.dataframe(cash_flow_df, use_container_width=True, hide_index=True,
                 }
 )
 st.markdown("---")
+
+
+
+
+# --- PDF helpers -------------------------------------------------------------
+from fpdf import FPDF
+from io import BytesIO
+import os
+from datetime import datetime
+import zoneinfo      
+
+MEL_TZ = zoneinfo.ZoneInfo("Australia/Melbourne")
+
+class PDF(FPDF):
+    def header(self):
+        # Title bar on every page
+        self.set_fill_color(230, 230, 230)
+        self.set_font("Helvetica", "B", 14)
+        self.cell(0, 8, "Property Investment Report", 0, 1, "C", fill=True)
+        self.ln(4)
+
+    def footer(self):
+        self.set_y(-12)
+        self.set_font("Helvetica", "I", 8)
+
+        date_str = datetime.now(MEL_TZ).strftime("Generated %d-%m-%Y %H:%M")
+        self.cell(0, 8, date_str, 0, 0, "L")
+
+        # -- page number on the right --------------------------------------------
+        self.cell(0, 8, f"Page {self.page_no()}", 0, 0, "R")
+
+
+def add_key_metrics(pdf, metrics: dict):
+    """
+    Render key-value pairs in two columns.
+
+    metrics = {"Property Value": "$635,000", "Weekly Rent": "$600", ...}
+    """
+    pdf.set_font("Helvetica", "", 11)
+    
+    # full printable width (left + right margins already excluded)
+    page_w = pdf.w - 2 * pdf.l_margin
+    col_pair_w = page_w / 2          # width for one “label + value” pair
+    label_w   = col_pair_w * 0.55    # 55 % label | 45 % value
+    value_w   = col_pair_w - label_w
+
+    for idx, (k, v) in enumerate(metrics.items()):
+        # label + value for this metric
+        pdf.cell(label_w, 6, k + ":", 0, 0)
+        pdf.cell(value_w, 6, v,      0, 0)
+
+        # after every 2nd metric, move to next line
+        if idx % 2 == 1:
+            pdf.ln(6)
+
+    # if odd number of metrics, make sure we end the row cleanly
+    if len(metrics) % 2 == 1:
+        pdf.ln(6)
+
+    pdf.ln(2)     # small spacer below the whole block
+
+
+def df_to_table(pdf, df, title):
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 6, title, 0, 1)
+    pdf.set_font("Helvetica", "", 8)
+
+    # Column widths proportional to page width
+    col_w = (pdf.w - 2*pdf.l_margin) / len(df.columns)
+    pdf.set_fill_color(240, 240, 240)
+
+    # Header row
+    for col in df.columns:
+        pdf.cell(col_w, 6, str(col), border=1, align="C", fill=True)
+    pdf.ln()
+
+    # Data rows
+    for _, row in df.iterrows():
+        for col, item in row.items():
+            if isinstance(item, (int, float)) and col != "Year":
+                txt = f"${item:,.0f}"          # $ + comma-separated, no decimals
+            else:
+                txt = str(item)
+            pdf.cell(col_w, 6, txt, border=1, align="C")
+        pdf.ln()
+
+
+
+def upload_to_stream(uploaded):
+    """Return (BytesIO stream, image_type) for an st.uploaded_file"""
+    stream = BytesIO(uploaded.getvalue())   # raw bytes → stream
+    stream.seek(0)
+    ext = os.path.splitext(uploaded.name)[1].lower()
+    img_type = "PNG" if ext == ".png" else "JPEG"   # default to JPEG
+    return stream, img_type
+
+import tempfile, os, contextlib
+
+@contextlib.contextmanager
+def uploaded_to_tempfile(uploaded):
+    """
+    Yields the name of a temporary image file created from a Streamlit
+    UploadedFile.  The file is removed automatically afterwards.
+    """
+    ext = os.path.splitext(uploaded.name)[1] or ".jpg"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+        tmp.write(uploaded.getvalue())
+        tmp.flush()
+        tmp_name = tmp.name       # keep path before closing
+    try:
+        yield tmp_name            # hand the path back to caller
+    finally:
+        os.remove(tmp_name)       # clean up
+
+
+def generate_pdf(address,
+                 metrics_dict,
+                 home_metrics,
+                 projection_df,
+                 cash_flow_df,
+                 notes_text,
+                 images):
+    pdf = PDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+
+    # First image (if any) centred under title
+    if images:
+        with uploaded_to_tempfile(images[0]) as img_path:
+            pdf.image(img_path, x=(pdf.w/2 - 40), w=80)
+        pdf.ln(2)
+
+    # Cover section -----------------------------------------------------------
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 8, address or "No Address Provided", 0, 1)
+    pdf.ln(2)
+
+    # Summary metrics ---------------------------------------------------------
+    pdf.set_font("Helvetica", "B", 12)
+    # pdf.cell(0, 8, "Key Metrics", 0, 1)
+    add_key_metrics(pdf, home_metrics)
+    pdf.ln(3)
+
+    # Summary metrics ---------------------------------------------------------
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Key Metrics", 0, 1)
+    add_key_metrics(pdf, metrics_dict)
+    pdf.ln(3)
+    
+
+    # Notes -------------------------------------------------------------------
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Notes", 0, 1)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.multi_cell(0, 5, notes_text or "—")
+
+    pdf.ln(2)
+    pdf.add_page()
+    # Projection table --------------------------------------------------------
+    df_to_table(pdf, projection_df, "10-Year Projection")
+
+    # Cash-flow table ---------------------------------------------------------
+    df_to_table(pdf, cash_flow_df, "Deductions & Cash Flow")
+
+
+    # extra photos
+    if len(images) > 1:
+        pdf.add_page()
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, "Property Photos", 0, 1)
+        pdf.ln(2)
+
+        w = (pdf.w - 2*pdf.l_margin - 10) / 2
+        h = w * 0.75
+        for idx, upl in enumerate(images[1:], start=1):
+            with uploaded_to_tempfile(upl) as img_path:
+                pdf.image(img_path, w=w, h=h)
+            if idx % 2 == 0:
+                pdf.ln(h + 4)
+            else:
+                pdf.set_x(pdf.l_margin + w + 10)
+
+    # Return bytes
+    return pdf.output(dest="S").encode("latin-1")
+
+
+
+@st.cache_resource(show_spinner="Building report…")
+def build_report(**kwargs):
+    return generate_pdf(**kwargs)
+
+if address is not None:
+    # address = address.replace(" ","").replace(",","_")
+    # address = address.replace(" ","_").replace(",","_")
+    address_safe = address.replace(" ","").replace(",","_")
+else:
+    address_safe = "No_Address_Provided"
+download_holder.download_button(label=":material/download: PDF Report",
+                                data=build_report(
+                                                    address=address,
+                                                    metrics_dict={
+                                                        "Property Value": f"${property_value:,.0f}",
+                                                        "Weekly Rent": f"${rental_income:,.0f}",
+                                                        "Loan Amount": f"${loan_amount:,.0f}",
+                                                        "Gross Rental Yield": f"{round((rental_income*52)/property_value*100,2)}%",
+                                                        "Property Value (10 years)": f"${property_value * (1 + property_growth / 100) ** 9:,.0f}",
+                                                        "Equity in Property (10 years)": f"${property_value * (1 + property_growth / 100) ** 9 - loan_amount:,.0f}",
+                                                    },
+                                                    home_metrics={
+                                                        "Property Type": f"{property_type}",
+                                                        "Property Size": f"{property_size} sqm",
+                                                        "Build Year": f"{property_age}",
+                                                        "Bedrooms": f"{property_bedrooms}",
+                                                        "Bathrooms": f"{property_bathrooms}",
+                                                        "Car Spaces": f"{property_garages}"
+                                                    },
+                                                    projection_df=projection_df.round(0).astype(int),
+                                                    cash_flow_df=cash_flow_df.round(0).astype(int),
+                                                    notes_text=notes,
+                                                    images=property_image,         
+                                                ),
+                                file_name=f"{address_safe}.pdf",
+                                mime="application/pdf",
+                                help="Download the report as a PDF file"
+            )
 
