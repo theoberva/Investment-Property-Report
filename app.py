@@ -9,7 +9,6 @@ from io import BytesIO
 import os
 from datetime import datetime
 import zoneinfo      
-from fpdf import FPDF
 import base64
 import tempfile, os, contextlib
 
@@ -589,7 +588,7 @@ def generate_pdf(address,
                 pdf.set_x(pdf.l_margin + w + 10)
 
     # Return bytes
-    return pdf.output(dest="S")
+    return pdf.output(dest="S").encode("latin-1") 
 
 
 
